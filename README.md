@@ -68,7 +68,7 @@ This project demonstrates **real-world backend engineering**, **distributed syst
 ---
 
 ### Clone Repository
-git clone https://github.com/your-username/smart-ddos-shield.git
+git clone https://github.com/Rit2sh/smart-ddos-shield.git
 
 cd smart-ddos-shield
 
