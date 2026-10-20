@@ -1,0 +1,550 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  OWNER
+  SECURITY_ADMIN
+  ANALYST
+  VIEWER
+}
+
+enum AssetType {
+  DOMAIN
+  SUBDOMAIN
+  IP_PREFIX
+  API_GATEWAY
+  LOAD_BALANCER
+}
+
+enum VerificationMethod {
+  DNS_TXT
+  HTTP_CHALLENGE
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+  EXPIRED
+}
+
+enum AssetStatus {
+  UNVERIFIED
+  ACTIVE
+  DEGRADED
+  UNDER_ATTACK
+  SUSPENDED
+}
+
+enum IncidentSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum IncidentStatus {
+  OPEN
+  ACTIVE
+  INVESTIGATING
+  MITIGATING
+  MONITORING
+  RESOLVED
+  FALSE_POSITIVE
+  REOPENED
+}
+
+enum MitigationActionType {
+  BLOCK_IP
+  RATE_LIMIT
+  GEO_RESTRICTION
+  CHALLENGE_CAPTCHA
+  WAF_RULE
+  BGP_BLACKHOLE
+}
+
+enum MitigationStatus {
+  SIMULATED
+  PENDING
+  APPLIED
+  VERIFIED
+  FAILED
+  UNKNOWN
+  REVOKED
+}
+
+enum RuleCategory {
+  RATE_SPIKE
+  SYN_FLOOD
+  UDP_AMPLIFICATION
+  SLOWLORIS
+  HTTP_FLOOD
+  ANOMALY
+}
+
+enum CollectorStatus {
+  HEALTHY
+  DEGRADED
+  OFFLINE
+  PROVISIONING
+}
+
+enum AlertChannel {
+  EMAIL
+  SLACK
+  WEBHOOK
+  PAGERDUTY
+}
+
+enum AlertSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id                    String                   @id @default(cuid())
+  email                 String                   @unique
+  name                  String?
+  passwordHash          String
+  avatarUrl             String?
+  isActive              Boolean                  @default(true)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  memberships           OrganizationMembership[]
+  auditLogs             AuditLog[]
+  createdIncidents      Incident[]               @relation("CreatedByUser")
+  apiKeys               ApiKey[]
+  notificationSettings  NotificationPreference[]
+
+  @@index([email])
+}
+
+model Organization {
+  id                    String                   @id @default(cuid())
+  name                  String
+  slug                  String                   @unique
+  billingTier           String                   @default("ENTERPRISE")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  memberships           OrganizationMembership[]
+  assets                Asset[]
+  collectors            Collector[]
+  detectionRules        DetectionRule[]
+  incidents             Incident[]
+  mitigationPolicies    MitigationPolicy[]
+  alerts                Alert[]
+  notificationSettings  NotificationPreference[]
+  auditLogs             AuditLog[]
+  apiKeys               ApiKey[]
+  integrations          IntegrationConfiguration[]
+  jobs                  BackgroundJob[]
+
+  @@index([slug])
+}
+
+model OrganizationMembership {
+  id              String        @id @default(cuid())
+  organizationId  String
+  userId          String
+  role            UserRole      @default(VIEWER)
+  invitedBy       String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Asset {
+  id                String             @id @default(cuid())
+  organizationId    String
+  name              String
+  domain            String
+  assetType         AssetType          @default(DOMAIN)
+  originTarget      String
+  status            AssetStatus        @default(UNVERIFIED)
+  protectionEnabled Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  verifications     AssetVerification[]
+  telemetryBatches  TelemetryBatch[]
+  trafficAggregates TrafficAggregate[]
+  incidents         Incident[]
+  mitigationActions MitigationAction[]
+
+  @@unique([organizationId, domain])
+  @@index([organizationId])
+  @@index([domain])
+  @@index([status])
+}
+
+model AssetVerification {
+  id                String             @id @default(cuid())
+  assetId           String
+  token             String             @unique
+  method            VerificationMethod @default(DNS_TXT)
+  status            VerificationStatus @default(PENDING)
+  expectedRecord    String
+  expectedValue     String
+  attemptCount      Int                @default(0)
+  lastCheckedAt     DateTime?
+  verifiedAt        DateTime?
+  expiresAt         DateTime
+  failureReason     String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  asset             Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([token])
+  @@index([status])
+}
+
+model Collector {
+  id                String               @id @default(cuid())
+  organizationId    String
+  name              String
+  nodeIdentifier    String               @unique
+  region            String
+  ipAddress         String?
+  version           String               @default("1.0.0")
+  status            CollectorStatus      @default(PROVISIONING)
+  lastHeartbeat     DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  credentials       CollectorCredential[]
+  telemetryBatches  TelemetryBatch[]
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model CollectorCredential {
+  id                String       @id @default(cuid())
+  collectorId       String
+  keyIdentifier     String       @unique
+  hashedSecret      String
+  lastUsedAt        DateTime?
+  expiresAt         DateTime?
+  isActive          Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+
+  collector         Collector    @relation(fields: [collectorId], references: [id], onDelete: Cascade)
+
+  @@index([collectorId])
+  @@index([keyIdentifier])
+}
+
+model TelemetryBatch {
+  id                String       @id @default(cuid())
+  collectorId       String
+  assetId           String
+  batchTimestamp    DateTime     @default(now())
+  totalRequests     BigInt       @default(0)
+  droppedRequests   BigInt       @default(0)
+  bytesIngested     BigInt       @default(0)
+  payloadJson       String?
+  createdAt         DateTime     @default(now())
+
+  collector         Collector    @relation(fields: [collectorId], references: [id], onDelete: Cascade)
+  asset             Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([collectorId])
+  @@index([assetId])
+  @@index([batchTimestamp])
+}
+
+model TrafficAggregate {
+  id                String       @id @default(cuid())
+  assetId           String
+  timestamp         DateTime
+  windowMinutes     Int          @default(1)
+  totalRps          Float        @default(0)
+  cleanRps          Float        @default(0)
+  blockedRps        Float        @default(0)
+  synRps            Float        @default(0)
+  udpRps            Float        @default(0)
+  httpRps           Float        @default(0)
+  topAttackingIps   String?
+  topAttackingGeos  String?
+  createdAt         DateTime     @default(now())
+
+  asset             Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, timestamp])
+  @@index([timestamp])
+}
+
+model DetectionRule {
+  id                String       @id @default(cuid())
+  organizationId    String
+  name              String
+  description       String?
+  category          RuleCategory
+  thresholdValue    Float
+  timeWindowSeconds Int          @default(60)
+  severity          IncidentSeverity @default(HIGH)
+  isEnabled         Boolean      @default(true)
+  actionToTrigger   MitigationActionType @default(RATE_LIMIT)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  events            DetectionEvent[]
+
+  @@index([organizationId])
+  @@index([category])
+}
+
+model DetectionEvent {
+  id                String          @id @default(cuid())
+  detectionRuleId   String
+  incidentId        String?
+  triggeredAt       DateTime        @default(now())
+  metricObserved    Float
+  targetAsset       String
+  rawDetails        String?
+
+  detectionRule     DetectionRule   @relation(fields: [detectionRuleId], references: [id], onDelete: Cascade)
+  incident          Incident?       @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([detectionRuleId])
+  @@index([incidentId])
+  @@index([triggeredAt])
+}
+
+model Incident {
+  id                String             @id @default(cuid())
+  organizationId    String
+  assetId           String
+  createdById       String?
+  title             String
+  description       String?
+  severity          IncidentSeverity   @default(HIGH)
+  status            IncidentStatus     @default(ACTIVE)
+  attackVector      String
+  peakRps           Float              @default(0)
+  startedAt         DateTime           @default(now())
+  resolvedAt        DateTime?
+  mitigationSummary String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset             Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdBy         User?              @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: SetNull)
+  evidences         IncidentEvidence[]
+  mitigationActions MitigationAction[]
+  detectionEvents   DetectionEvent[]
+  alerts            Alert[]
+
+  @@index([organizationId])
+  @@index([assetId])
+  @@index([status])
+  @@index([severity])
+  @@index([startedAt])
+}
+
+model IncidentEvidence {
+  id                String       @id @default(cuid())
+  incidentId        String
+  evidenceType      String
+  summary           String
+  rawPayload        String?
+  sourceIp          String?
+  sourceGeo         String?
+  timestamp         DateTime     @default(now())
+
+  incident          Incident     @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@index([timestamp])
+}
+
+model MitigationPolicy {
+  id                String               @id @default(cuid())
+  organizationId    String
+  name              String
+  description       String?
+  actionType        MitigationActionType
+  parametersJson    String
+  isEnforced        Boolean              @default(false)
+  priority          Int                  @default(100)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actions           MitigationAction[]
+
+  @@index([organizationId])
+  @@index([isEnforced])
+}
+
+model MitigationAction {
+  id                String               @id @default(cuid())
+  incidentId        String?
+  assetId           String
+  policyId          String?
+  actionType        MitigationActionType
+  target            String
+  status            MitigationStatus     @default(PENDING)
+  executionLog      String?
+  appliedAt         DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime             @default(now())
+
+  incident          Incident?            @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  asset             Asset                @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  policy            MitigationPolicy?    @relation(fields: [policyId], references: [id], onDelete: SetNull)
+
+  @@index([incidentId])
+  @@index([assetId])
+  @@index([status])
+}
+
+model Alert {
+  id                String           @id @default(cuid())
+  organizationId    String
+  incidentId        String?
+  title             String
+  message           String
+  severity          AlertSeverity    @default(CRITICAL)
+  isAcknowledged    Boolean          @default(false)
+  acknowledgedAt    DateTime?
+  deliveredVia      AlertChannel     @default(EMAIL)
+  createdAt         DateTime         @default(now())
+
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  incident          Incident?        @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([incidentId])
+  @@index([isAcknowledged])
+  @@index([createdAt])
+}
+
+model NotificationPreference {
+  id                String         @id @default(cuid())
+  organizationId    String
+  userId            String
+  channel           AlertChannel   @default(EMAIL)
+  destination       String
+  notifyOnCritical  Boolean        @default(true)
+  notifyOnWarning   Boolean        @default(true)
+  notifyOnResolved  Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, destination])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model AuditLog {
+  id                String       @id @default(cuid())
+  organizationId    String
+  userId            String?
+  action            String
+  resourceType      String
+  resourceId        String?
+  ipAddress         String?
+  userAgent         String?
+  metadataJson      String?
+  createdAt         DateTime     @default(now())
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user              User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model ApiKey {
+  id                String       @id @default(cuid())
+  organizationId    String
+  userId            String
+  name              String
+  keyPrefix         String
+  hashedSecret      String
+  permissionsJson   String?
+  lastUsedAt        DateTime?
+  expiresAt         DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime     @default(now())
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([keyPrefix])
+}
+
+model IntegrationConfiguration {
+  id                String       @id @default(cuid())
+  organizationId    String
+  providerName      String
+  isEnabled         Boolean      @default(true)
+  configJson        String
+  lastSyncedAt      DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, providerName])
+  @@index([organizationId])
+}
+
+model BackgroundJob {
+  id                String       @id @default(cuid())
+  organizationId    String?
+  jobType           String
+  status            JobStatus    @default(PENDING)
+  payloadJson       String?
+  resultJson        String?
+  errorMessage      String?
+  retryCount        Int          @default(0)
+  maxRetries        Int          @default(3)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  scheduledFor      DateTime     @default(now())
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([scheduledFor])
+}

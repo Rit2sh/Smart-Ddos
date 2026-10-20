@@ -1,0 +1,44 @@
+name: Smart DDoS Shield CI Pipeline
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate-and-test:
+    name: Typecheck, Test, and Build
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ci-pipeline-super-secure-jwt-secret-key-32-chars-min
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/smartddos_ci?schema=public
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: TypeScript Type Checking
+        run: npx tsc --noEmit
+
+      - name: Run Vitest Security & Unit Suites
+        run: npx vitest run
+
+      - name: Build Production Next.js Bundle
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
