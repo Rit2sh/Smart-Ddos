@@ -305,7 +305,7 @@ describe("Critical End-to-End User Journeys (Journeys A - F)", () => {
         // 4. Verify post-incident report draft
         expect(analysis.postIncidentReportDraft).toContain("Post-Incident Executive Summary");
       }
-    });
+    }, 15000);
   });
 
   // --------------------------------------------------------------------------

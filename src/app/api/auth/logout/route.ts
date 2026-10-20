@@ -9,3 +9,9 @@ export async function POST(req: NextRequest) {
   response.cookies.delete("smart_ddos_session");
   return response;
 }
+
+export async function GET(req: NextRequest) {
+  const response = NextResponse.redirect(new URL("/login", req.url));
+  response.cookies.delete("smart_ddos_session");
+  return response;
+}

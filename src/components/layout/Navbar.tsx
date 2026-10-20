@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import { Shield, Activity, Bell, Building2, User, ChevronDown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Shield, Activity, Bell, Building2, User, ChevronDown, LogOut } from "lucide-react";
 import { DemoBadge } from "../ui/DemoBadge";
 
 interface NavbarProps {
@@ -11,6 +12,20 @@ interface NavbarProps {
 }
 
 export function Navbar({ currentOrg = "Shield Cyber Corp", userRole = "OWNER" }: NavbarProps) {
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Continue to redirect even if fetch fails
+    } finally {
+      window.location.href = "/login";
+    }
+  };
+
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border-subtle bg-background/80 backdrop-blur-md">
       <div className="flex h-16 items-center justify-between px-4 sm:px-6">
@@ -49,8 +64,8 @@ export function Navbar({ currentOrg = "Shield Cyber Corp", userRole = "OWNER" }:
           <DemoBadge />
         </div>
 
-        {/* Right Actions: Telemetry Latency, Alerts, User Profile */}
-        <div className="flex items-center gap-3">
+        {/* Right Actions: Telemetry Latency, Alerts, User Profile & Log Out */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded bg-panel/70 border border-border-subtle text-xs font-mono text-text-secondary">
             <Activity className="w-3.5 h-3.5 text-status-success" />
             <span>LATENCY:</span>
@@ -60,6 +75,7 @@ export function Navbar({ currentOrg = "Shield Cyber Corp", userRole = "OWNER" }:
           <Link
             href="/app/alerts"
             className="relative p-2 rounded-lg bg-panel border border-border-subtle text-text-secondary hover:text-brand-cyan hover:border-brand-cyan/40 transition-colors"
+            title="Active Threat Alerts"
           >
             <Bell className="w-4 h-4" />
             <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
@@ -68,15 +84,29 @@ export function Navbar({ currentOrg = "Shield Cyber Corp", userRole = "OWNER" }:
             </span>
           </Link>
 
+          {/* User Profile Link */}
           <Link
             href="/app/settings"
-            className="flex items-center gap-2.5 p-1.5 pl-2.5 rounded-lg bg-panel border border-border-subtle hover:border-brand-cyan/40 transition-all text-xs text-text-primary"
+            className="flex items-center gap-2 p-1.5 pl-2 sm:pl-2.5 rounded-lg bg-panel border border-border-subtle hover:border-brand-cyan/40 transition-all text-xs text-text-primary"
+            title="Account Settings"
           >
             <div className="w-6 h-6 rounded-full bg-brand-cyan/20 border border-brand-cyan/40 flex items-center justify-center text-brand-cyan font-bold text-xs">
               MV
             </div>
             <span className="hidden md:inline font-medium text-xs">Marcus V.</span>
           </Link>
+
+          {/* Prominent Log Out Button */}
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-status-critical/10 border border-status-critical/30 hover:bg-status-critical/20 hover:border-status-critical/50 text-status-critical text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
+            title="Log Out of Security Console"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{loggingOut ? "Signing Out..." : "Log Out"}</span>
+          </button>
         </div>
       </div>
     </header>
